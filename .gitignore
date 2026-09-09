@@ -1,0 +1,7 @@
+.env
+storage/*.sqlite
+storage/*.sqlite-*
+storage/installed.lock
+storage/logs/*.log
+storage/sessions/*
+.DS_Store
