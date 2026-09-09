@@ -31,9 +31,147 @@ function get_staff(int $id): ?array
     return $st->fetch() ?: null;
 }
 
-function active_branches(): array
+function get_business(int $id): ?array
 {
+    $st = db()->prepare('SELECT b.*, u.name AS owner_name, u.phone AS owner_phone FROM businesses b LEFT JOIN users u ON u.id = b.owner_user_id WHERE b.id = ?');
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
+/** کسب‌وکارهای فعال (با فیلتر دسته/جستجو/شهر) */
+function active_businesses(?string $category = null, string $q = '', ?string $city = null): array
+{
+    $sql = 'SELECT * FROM businesses WHERE active = 1';
+    $params = [];
+    if ($category) {
+        $sql .= ' AND category = ?';
+        $params[] = $category;
+    }
+    if ($city) {
+        $sql .= ' AND city = ?';
+        $params[] = $city;
+    }
+    if ($q !== '') {
+        $sql .= ' AND (name LIKE ? OR description LIKE ? OR category LIKE ?)';
+        $params[] = "%{$q}%";
+        $params[] = "%{$q}%";
+        $params[] = "%{$q}%";
+    }
+    $sql .= ' ORDER BY sort, id';
+    $st = db()->prepare($sql);
+    $st->execute($params);
+    return $st->fetchAll();
+}
+
+/** دسته‌بندی‌های شغلی به‌همراه تعداد کسب‌وکار فعال */
+function business_categories(): array
+{
+    return db()->query("SELECT category, COUNT(*) AS c FROM businesses WHERE active = 1 GROUP BY category ORDER BY c DESC, category")->fetchAll();
+}
+
+/** شهرهای دارای کسب‌وکار فعال */
+function business_cities(): array
+{
+    return db()->query('SELECT DISTINCT city FROM businesses WHERE active = 1 AND city IS NOT NULL AND city <> "" ORDER BY city')->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/** کسب‌وکارهای یک صاحب خدمت */
+function businesses_for_provider(int $user_id): array
+{
+    $st = db()->prepare('SELECT * FROM businesses WHERE owner_user_id = ? ORDER BY sort, id');
+    $st->execute([$user_id]);
+    return $st->fetchAll();
+}
+
+function active_branches(?int $business_id = null): array
+{
+    if ($business_id) {
+        $st = db()->prepare('SELECT * FROM branches WHERE active = 1 AND business_id = ? ORDER BY sort, id');
+        $st->execute([$business_id]);
+        return $st->fetchAll();
+    }
     return db()->query('SELECT * FROM branches WHERE active = 1 ORDER BY sort, id')->fetchAll();
+}
+
+/** شعبه‌های یک کسب‌وکار (پیش‌فرض فقط فعال‌ها) */
+function branches_of_business(int $business_id, bool $onlyActive = true): array
+{
+    $sql = 'SELECT * FROM branches WHERE business_id = ?';
+    if ($onlyActive) {
+        $sql .= ' AND active = 1';
+    }
+    $sql .= ' ORDER BY sort, id';
+    $st = db()->prepare($sql);
+    $st->execute([$business_id]);
+    return $st->fetchAll();
+}
+
+/** کسب‌وکارِ یک شعبه */
+function branch_business(?array $branch): ?array
+{
+    if (!$branch || empty($branch['business_id'])) {
+        return null;
+    }
+    return get_business((int) $branch['business_id']);
+}
+
+/**
+ * نزدیک‌ترین روز دارای ظرفیت یک کسب‌وکار (برای نشان مارکت‌پلیس).
+ * @return array{date:string,label:string,free:int,today:bool}|array{}
+ */
+/**
+ * نزدیک‌ترین ظرفیت آزاد یک کسب‌وکار در ۷ روز آینده.
+ * @return array{date:string,date_label:string,today:int}|null (today = تعداد ساعت خالی امروز، اگر نزدیک‌ترین روز امروز باشد)
+ */
+function business_next_available(int $business_id): ?array
+{
+    $branches = active_branches($business_id);
+    if (!$branches) {
+        return null;
+    }
+    // حداکثر ۳ خدمت اول هر شعبه با اولین متخصصِ آن (توقف در اولین روزِ دارای ظرفیت)
+    $probes = [];
+    foreach ($branches as $br) {
+        $bid = (int) $br['id'];
+        foreach (array_slice(active_services($bid), 0, 3) as $svc) {
+            $staff = staff_for_service($bid, (int) $svc['id']);
+            if ($staff) {
+                $probes[] = ['branch' => $bid, 'service' => (int) $svc['id'], 'staff' => (int) $staff[0]['id']];
+            }
+        }
+    }
+    if (!$probes) {
+        return null;
+    }
+    for ($d = 0; $d < 7; $d++) {
+        $date = date('Y-m-d', strtotime("+{$d} days"));
+        $total = 0;
+        foreach ($probes as $p) {
+            $r = generate_slots($p['branch'], $p['service'], $p['staff'], $date);
+            if (($r['status'] ?? '') === 'open') {
+                $total += count($r['slots'] ?? []);
+            }
+        }
+        if ($total > 0) {
+            return ['date' => $date, 'date_label' => fa_long_date($date), 'today' => $d === 0 ? $total : 0];
+        }
+    }
+    return null;
+}
+
+/** آمار خلاصه‌ی یک کسب‌وکار برای کارت مارکت‌پلیس */
+function business_card_stats(int $business_id): array
+{
+    $pdo = db();
+    $brIds = array_column(active_branches($business_id), 'id');
+    if (!$brIds) {
+        return ['services' => 0, 'staff' => 0, 'branches' => 0, 'done' => 0];
+    }
+    $in = implode(',', array_map('intval', $brIds));
+    $services = (int) $pdo->query("SELECT COUNT(*) FROM services WHERE active = 1 AND branch_id IN ({$in})")->fetchColumn();
+    $staff = (int) $pdo->query("SELECT COUNT(*) FROM staff WHERE active = 1 AND branch_id IN ({$in})")->fetchColumn();
+    $done = (int) $pdo->query("SELECT COUNT(*) FROM bookings WHERE branch_id IN ({$in}) AND status = 'done'")->fetchColumn();
+    return ['services' => $services, 'staff' => $staff, 'branches' => count($brIds), 'done' => $done];
 }
 
 function active_services(int $branch_id): array
@@ -383,11 +521,17 @@ function create_booking(array $input): array
         }
 
         $code = generate_booking_code($pdo);
-        $status = $price > 0 ? 'pending_payment' : 'confirmed';
+        $manual = !empty($input['force_confirmed']); // ثبت دستی توسط صاحب خدمت (نوبت تلفنی/حضوری)
+        $status = ($price > 0 && !$manual) ? 'pending_payment' : 'confirmed';
+        $paidInit = $manual ? max(0, (int) ($input['amount_paid'] ?? 0)) : 0;
+        $payStatusInit = $paidInit >= $price && $price > 0 ? 'paid' : ($paidInit > 0 ? 'partial' : 'unpaid');
+        if ($price <= 0) {
+            $payStatusInit = 'paid';
+        }
         $slotKey = $staff_id . '|' . $date . '|' . $start; // یکتای سطح دیتابیس برای رزرو هم‌زمان
-        $st = $pdo->prepare('INSERT INTO bookings (code, branch_id, service_id, staff_id, customer_id, customer_name, customer_phone, booking_date, start_time, end_time, status, price, deposit_required, amount_paid, payment_status, notes, slot_key, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $st->execute([$code, $branch_id, $service_id, $staff_id, $customer_id, $name, $phone, $date, $start, $end, $status, $price, $deposit, 0, 'unpaid', trim((string) ($input['notes'] ?? '')), $slotKey, now_str()]);
+        $st = $pdo->prepare('INSERT INTO bookings (code, branch_id, service_id, staff_id, customer_id, customer_name, customer_phone, booking_date, start_time, end_time, status, price, deposit_required, amount_paid, payment_status, notes, admin_notes, slot_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $st->execute([$code, $branch_id, $service_id, $staff_id, $customer_id, $name, $phone, $date, $start, $end, $status, $price, $deposit, $paidInit, $payStatusInit, trim((string) ($input['notes'] ?? '')), trim((string) ($input['admin_notes'] ?? '')), $slotKey, now_str()]);
         $id = (int) $pdo->lastInsertId();
         $pdo->commit();
     } catch (SlotTakenException $e) {
@@ -408,6 +552,11 @@ function create_booking(array $input): array
 
     $booking = booking_detail($id);
     if ($status === 'confirmed') {
+        // ثبت پرداخت دستی (نقدی/کارتخوان)
+        if ($manual && $paidInit > 0) {
+            $st = $pdo->prepare("INSERT INTO payments (booking_id, amount, kind, method, gateway, status, ref_id, created_at) VALUES (?, ?, ?, ?, 'manual', 'success', ?, ?)");
+            $st->execute([$id, $paidInit, $paidInit >= $price ? 'full' : 'deposit', $input['pay_method'] ?? 'cash', 'MANUAL-' . $id, now_str()]);
+        }
         schedule_booking_notifications($booking);
     }
     return $booking;
@@ -417,11 +566,13 @@ function create_booking(array $input): array
 function booking_detail(int $id): ?array
 {
     $st = db()->prepare('SELECT b.*, s.name AS service_name, s.category AS service_category, s.duration_minutes,
-        st.name AS staff_name, st.title AS staff_title, br.name AS branch_name, br.address AS branch_address
+        st.name AS staff_name, st.title AS staff_title, br.name AS branch_name, br.address AS branch_address,
+        bz.name AS business_name
         FROM bookings b
         JOIN services s ON s.id = b.service_id
         JOIN staff st ON st.id = b.staff_id
         JOIN branches br ON br.id = b.branch_id
+        LEFT JOIN businesses bz ON bz.id = br.business_id
         WHERE b.id = ?');
     $st->execute([$id]);
     return $st->fetch() ?: null;
@@ -430,11 +581,13 @@ function booking_detail(int $id): ?array
 function booking_by_code(string $code): ?array
 {
     $st = db()->prepare('SELECT b.*, s.name AS service_name, s.category AS service_category, s.duration_minutes,
-        st.name AS staff_name, st.title AS staff_title, br.name AS branch_name, br.address AS branch_address
+        st.name AS staff_name, st.title AS staff_title, br.name AS branch_name, br.address AS branch_address,
+        bz.name AS business_name
         FROM bookings b
         JOIN services s ON s.id = b.service_id
         JOIN staff st ON st.id = b.staff_id
         JOIN branches br ON br.id = b.branch_id
+        LEFT JOIN businesses bz ON bz.id = br.business_id
         WHERE b.code = ?');
     $st->execute([trim($code)]);
     return $st->fetch() ?: null;
@@ -569,7 +722,7 @@ function process_waiting_for_slot(int $branch_id, int $service_id, string $date,
         $branch = get_branch($branch_id);
         $fake = ['customer_name' => $w['customer_name'], 'booking_date' => $date, 'start_time' => $time, 'code' => ''];
         queue_notification(null, $w['customer_id'] ? (int) $w['customer_id'] : null, 'sms', 'waiting_offer',
-            $w['customer_phone'], booking_message('waiting_offer', $fake, $service, ['name' => ''], $branch), now_str());
+            $w['customer_phone'], booking_message('waiting_offer', $fake, $service, ['name' => ''], $branch, branch_business($branch)), now_str());
         $w['status'] = 'offered';
         return $w;
     }

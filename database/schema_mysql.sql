@@ -7,14 +7,32 @@ CREATE TABLE IF NOT EXISTS settings (
     `value` TEXT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS businesses (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    owner_user_id INT UNSIGNED NULL COMMENT 'صاحب کسب‌وکار (نقش provider)',
+    name VARCHAR(150) NOT NULL,
+    category VARCHAR(80) NOT NULL DEFAULT 'سایر' COMMENT 'دسته‌بندی شغلی',
+    description TEXT NULL,
+    phone VARCHAR(20) NULL,
+    address VARCHAR(255) NULL,
+    city VARCHAR(60) NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    sort INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    KEY ix_biz_category (category),
+    KEY ix_biz_owner (owner_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS branches (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    business_id INT UNSIGNED NULL COMMENT 'NULL یعنی کسب‌وکار پیش‌فرض',
     name VARCHAR(120) NOT NULL,
     address VARCHAR(255) NULL,
     phone VARCHAR(20) NULL,
     active TINYINT(1) NOT NULL DEFAULT 1,
     sort INT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL
+    created_at DATETIME NOT NULL,
+    KEY ix_branch_biz (business_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS users (

@@ -57,10 +57,10 @@ function queue_notification(?int $booking_id, ?int $customer_id, string $channel
 }
 
 /** ساخت متن پیام از روی قالب */
-function booking_message(string $template, array $booking, array $service, array $staff, array $branch): string
+function booking_message(string $template, array $booking, array $service, array $staff, array $branch, ?array $business = null): string
 {
     $name = $booking['customer_name'] ?: 'مشتری گرامی';
-    $biz  = setting('business_name', 'نوبت‌گیری');
+    $biz  = $booking['business_name'] ?? $business['name'] ?? setting('business_name', 'نوبت‌گیری');
     $date = fa_long_date($booking['booking_date']);
     $time = fa(substr($booking['start_time'], 0, 5));
     $code = $booking['code'];

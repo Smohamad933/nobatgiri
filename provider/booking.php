@@ -10,14 +10,10 @@ require ROOT_PATH . '/lib/Booking.php';
 require ROOT_PATH . '/lib/Payment.php';
 require ROOT_PATH . '/lib/Share.php';
 require_installed();
-$admin = require_admin();
+require __DIR__ . '/_guard.php';
 
 $id = get_int('id', post_int('id'));
-$booking = $id ? booking_detail($id) : null;
-if (!$booking) {
-    flash('error', 'رزرو یافت نشد.');
-    redirect(u('admin/bookings.php'));
-}
+$booking = biz_require_booking($id);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_csrf();
@@ -58,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (BookingException $e) {
         flash('error', $e->getMessage());
     }
-    redirect(u('admin/booking.php?id=' . $id));
+    redirect(u('provider/booking.php?id=' . $id));
 }
 
 $payments = db()->prepare('SELECT * FROM payments WHERE booking_id = ? ORDER BY id');
@@ -79,7 +75,6 @@ require __DIR__ . '/_layout.php';
     <dl class="kv">
       <dt>کد پیگیری</dt><dd dir="ltr"><code><?= h($booking['code']) ?></code></dd>
       <dt>مشتری</dt><dd><?= h($booking['customer_name']) ?> — <span dir="ltr"><?= h($booking['customer_phone']) ?></span></dd>
-      <dt>کسب‌وکار</dt><dd><?= h($booking['business_name'] ?? '—') ?></dd>
       <dt>خدمت</dt><dd><?= h($booking['service_name']) ?> (<?= h($booking['service_category']) ?>)</dd>
       <dt>متخصص</dt><dd><?= h($booking['staff_name']) ?></dd>
       <dt>شعبه</dt><dd><?= h($booking['branch_name']) ?></dd>

@@ -7,6 +7,7 @@ if (!$adminUser) {
 }
 $menu = [
     ['index.php', 'داشبورد', '📊', 'dashboard'],
+    ['businesses.php', 'کسب‌وکارها', '🏪', 'businesses'],
     ['bookings.php', 'رزروها', '📅', 'bookings'],
     ['services.php', 'خدمات', '💈', 'services'],
     ['staff.php', 'متخصصان', '👩‍⚕️', 'staff'],

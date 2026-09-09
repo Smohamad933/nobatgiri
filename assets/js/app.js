@@ -2,8 +2,7 @@
 (function () {
   'use strict';
 
-  const API = window.APP.api;
-  let CSRF = '';
+  const { api, toast, moneyFa, esc: escapeHtml } = window.NB;
   let BOOT = null;
 
   const S = {
@@ -33,35 +32,6 @@
   const stepBody = $('#step-body'), stepsEl = $('#steps'), summaryEl = $('#summary');
   const btnNext = $('#btn-next'), btnPrev = $('#btn-prev');
 
-  function toast(msg, type) {
-    const el = $('#toast');
-    el.innerHTML = '<div class="alert alert-' + (type || 'info') + '">' + escapeHtml(msg) + '</div>';
-    el.classList.add('show');
-    clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.remove('show'), 4000);
-  }
-
-  function escapeHtml(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-
-  async function api(action, params, method) {
-    method = method || 'GET';
-    const url = method === 'GET' && params
-      ? API + '?action=' + action + '&' + new URLSearchParams(params)
-      : API + '?action=' + action;
-    const opt = { method, headers: { 'X-CSRF-Token': CSRF } };
-    if (method === 'POST') {
-      const fd = new FormData();
-      if (params) for (const k in params) fd.append(k, params[k]);
-      opt.body = fd;
-    }
-    const res = await fetch(url, opt);
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'خطا');
-    return data;
-  }
-
   function loading(msg) {
     stepBody.innerHTML = '<div class="loading-box"><span class="spinner dark"></span> ' + escapeHtml(msg || 'در حال بارگذاری…') + '</div>';
   }
@@ -69,34 +39,35 @@
   /* ---------- راه‌اندازی ---------- */
   async function boot() {
     try {
-      BOOT = await api('bootstrap');
-      CSRF = BOOT.csrf;
+      BOOT = await api('bootstrap', { business_id: window.APP.businessId });
+      NB.csrf = BOOT.csrf;
       S.branches = BOOT.branches || [];
       S.branch = S.branches[0] || null;
       S.customer = BOOT.customer;
+      NB.customer = BOOT.customer;
       if (S.customer) {
         S.name = S.customer.name || '';
         S.phone = S.customer.phone || '';
         S.verified = true;
       }
-      renderNavUser();
+      renderBizHeader();
+      NB.renderNavUser(() => { S.customer = null; S.verified = false; S.otpSent = false; render(); });
       render();
-      loadMyBookings();
     } catch (e) {
-      stepBody.innerHTML = '<div class="alert alert-error">خطا در اتصال به سرور. لطفاً صفحه را تازه‌سازی کنید.</div>';
+      stepBody.innerHTML = '<div class="alert alert-error">خطا در بارگذاری اطلاعات کسب‌وکار. <a href="' + window.APP.home + '">بازگشت به لیست کسب‌وکارها</a></div>';
     }
   }
 
-  function renderNavUser() {
-    const el = $('#nav-user');
-    if (S.customer) {
-      el.innerHTML = '<span style="font-size:.85rem;color:var(--muted)">' + escapeHtml(S.customer.name || S.customer.phone) + '</span> <button class="linklike" id="logout-btn" style="color:var(--accent)">خروج</button>';
-      $('#logout-btn').onclick = async () => {
-        await api('logout', {}, 'POST').catch(() => {});
-        S.customer = null; S.verified = false; S.otpSent = false;
-        renderNavUser(); render(); loadMyBookings();
-      };
-    } else el.innerHTML = '';
+  function renderBizHeader() {
+    const wrap = document.getElementById('biz-hero');
+    if (wrap && BOOT.business) {
+      wrap.querySelector('[data-biz="name"]').textContent = BOOT.business.name;
+      wrap.querySelector('[data-biz="cat"]').textContent = BOOT.business.category || '';
+      wrap.querySelector('[data-biz="desc"]').textContent = BOOT.business.description || '';
+      wrap.querySelector('[data-biz="addr"]').textContent = [BOOT.business.city, BOOT.business.address].filter(Boolean).join('، ');
+      wrap.querySelector('[data-biz="phone"]').textContent = BOOT.business.phone || '';
+    }
+    document.title = 'رزرو نوبت — ' + (BOOT.business ? BOOT.business.name : '');
   }
 
   /* ---------- رندر کلی ---------- */
@@ -429,15 +400,12 @@
     });
   }
 
-  function moneyFa(n) {
-    return Number(n).toLocaleString('fa-IR') + ' تومان';
-  }
-
   async function submitBooking() {
     btnNext.disabled = true;
     btnNext.innerHTML = '<span class="spinner"></span> در حال ثبت نوبت…';
     try {
       const d = await api('create_booking', {
+        business_id: window.APP.businessId,
         branch_id: S.branch.id, service_id: S.service.id,
         staff_id: S.slotStaff ? S.slotStaff.id : (S.staff ? S.staff.id : 0),
         date: S.date, start: S.slot.start,
@@ -465,10 +433,9 @@
       '<div><span>زمان: </span><b>' + escapeHtml(b.date_label) + ' — ' + escapeHtml(b.time_label) + '</b></div>' +
       '<div><span>شعبه: </span><b>' + escapeHtml(b.branch) + '</b></div></div>' +
       '<div class="result-actions" style="justify-content:center">' +
-      '<button class="btn btn-ghost" onclick="document.getElementById(\'track\').scrollIntoView()">پیگیری نوبت</button> ' +
+      '<a class="btn btn-ghost" href="' + window.APP.home + '#track">پیگیری نوبت</a> ' +
       '<button class="btn btn-ghost" onclick="location.reload()">رزرو جدید</button></div></div>';
     summaryEl.innerHTML = '<h3>✓ ثبت شد</h3><div class="summary-row"><span class="k">کد پیگیری</span><span class="v">' + escapeHtml(b.code) + '</span></div>';
-    loadMyBookings();
   }
 
   /* ---------- ناوبری ---------- */
@@ -495,76 +462,6 @@
     if (S.step < STEPS.length - 1) go(S.step + 1);
   };
   btnPrev.onclick = () => { if (S.step > 0) go(S.step - 1); };
-
-  /* ---------- پیگیری نوبت ---------- */
-  $('#track-btn').onclick = async () => {
-    const code = $('#track-code').value.trim(), phone = $('#track-phone').value.trim();
-    const box = $('#track-result');
-    if (!code || !phone) { box.innerHTML = '<div class="alert alert-warning">کد پیگیری و موبایل را وارد کنید.</div>'; return; }
-    box.innerHTML = '<div class="loading-box"><span class="spinner dark"></span></div>';
-    try {
-      const d = await api('booking_lookup', { code, phone });
-      renderTrackResult(box, d.booking);
-    } catch (e) { box.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>'; }
-  };
-
-  function renderTrackResult(box, b) {
-    let h = '<div class="booking-result"><span class="status-badge st-' + b.status + '">' + escapeHtml(b.status_label) + '</span> <span class="code">' + escapeHtml(b.code) + '</span>';
-    h += '<div class="kv"><div><span>خدمت: </span><b>' + escapeHtml(b.service) + '</b></div>' +
-      '<div><span>متخصص: </span><b>' + escapeHtml(b.staff) + '</b></div>' +
-      '<div><span>شعبه: </span><b>' + escapeHtml(b.branch) + '</b></div>' +
-      '<div><span>زمان: </span><b>' + escapeHtml(b.date_label) + '</b></div>' +
-      '<div><span>ساعت: </span><b>' + escapeHtml(b.time_label) + '</b></div>' +
-      '<div><span>مبلغ: </span><b>' + escapeHtml(b.price_label) + '</b></div>' +
-      '<div><span>پرداخت‌شده: </span><b>' + escapeHtml(b.paid_label) + '</b></div></div>';
-    h += '<div class="result-actions" id="track-actions">';
-    if (b.can_pay) h += '<button class="btn btn-primary btn-sm" data-act="pay">پرداخت ' + escapeHtml(b.due_label) + '</button>';
-    if (b.can_cancel) h += '<button class="btn btn-ghost btn-sm" data-act="cancel" style="color:var(--accent)">لغو نوبت</button>';
-    if (b.gcal) h += '<a class="btn btn-ghost btn-sm" target="_blank" rel="noopener" href="' + escapeHtml(b.gcal) + '">＋ گوگل کلندر</a>';
-    if (b.ics_url) h += '<a class="btn btn-ghost btn-sm" href="' + escapeHtml(b.ics_url) + '">⬇ تقویم (ICS)</a>';
-    h += '</div><div id="track-msg"></div></div>';
-    box.innerHTML = h;
-    box.querySelectorAll('#track-actions [data-act]').forEach((btn) => btn.onclick = () => trackAction(btn.dataset.act, b));
-  }
-
-  async function trackAction(act, b) {
-    const msg = $('#track-msg');
-    if (act === 'pay') {
-      try {
-        const d = await api('ensure_payment', { code: b.code, phone: $('#track-phone').value.trim(), kind: 'full' }, 'POST');
-        window.location.href = d.pay_url;
-      } catch (e) { msg.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>'; }
-    } else if (act === 'cancel') {
-      if (!confirm('از لغو این نوبت مطمئن هستید؟')) return;
-      try {
-        const d = await api('cancel_mine', { code: b.code, phone: $('#track-phone').value.trim() }, 'POST');
-        msg.innerHTML = '<div class="alert alert-success">نوبت لغو شد.' + (d.refund > 0 ? ' مبلغ ' + escapeHtml(d.refund_label) + ' مسترد می‌گردد.' : '') + '</div>';
-        $('#track-btn').click();
-      } catch (e) { msg.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>'; }
-    }
-  }
-
-  /* ---------- نوبت‌های من ---------- */
-  async function loadMyBookings() {
-    const box = $('#my-list');
-    if (!S.customer) { box.innerHTML = '<p style="color:var(--muted)">برای مشاهده‌ی نوبت‌ها، در مرحله‌ی «مشخصات» رزرو با کد تأیید وارد شوید.</p>'; return; }
-    try {
-      const d = await api('my_bookings');
-      if (!d.bookings.length) { box.innerHTML = '<p style="color:var(--muted)">هنوز نوبتی ثبت نکرده‌اید.</p>'; return; }
-      box.innerHTML = '<div class="my-bookings">' + d.bookings.map((b) =>
-        '<div class="my-booking"><span class="status-badge st-' + b.status + '">' + escapeHtml(b.status_label) + '</span>' +
-        '<div class="grow"><b>' + escapeHtml(b.service) + '</b> — ' + escapeHtml(b.date_label) + '، ' + escapeHtml(b.time_label) +
-        '<br><small style="color:var(--muted)">' + escapeHtml(b.staff) + ' | کد: ' + escapeHtml(b.code) + '</small></div>' +
-        '<button class="btn btn-ghost btn-sm" data-code="' + escapeHtml(b.code) + '" data-phone="' + escapeHtml(b.customer_phone) + '">جزئیات</button></div>'
-      ).join('') + '</div>';
-      box.querySelectorAll('[data-code]').forEach((btn) => btn.onclick = () => {
-        $('#track-code').value = btn.dataset.code;
-        $('#track-phone').value = btn.dataset.phone;
-        document.getElementById('track').scrollIntoView({ behavior: 'smooth' });
-        $('#track-btn').click();
-      });
-    } catch (e) { box.innerHTML = ''; }
-  }
 
   boot();
 })();

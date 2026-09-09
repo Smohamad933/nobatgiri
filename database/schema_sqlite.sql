@@ -7,8 +7,25 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NULL
 );
 
+CREATE TABLE IF NOT EXISTS businesses (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    owner_user_id INTEGER NULL,
+    name VARCHAR(150) NOT NULL,
+    category VARCHAR(80) NOT NULL DEFAULT 'سایر',
+    description TEXT NULL,
+    phone VARCHAR(20) NULL,
+    address VARCHAR(255) NULL,
+    city VARCHAR(60) NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_biz_category ON businesses(category);
+CREATE INDEX IF NOT EXISTS ix_biz_owner ON businesses(owner_user_id);
+
 CREATE TABLE IF NOT EXISTS branches (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NULL,
     name VARCHAR(120) NOT NULL,
     address VARCHAR(255) NULL,
     phone VARCHAR(20) NULL,
@@ -16,6 +33,7 @@ CREATE TABLE IF NOT EXISTS branches (
     sort INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ix_branch_biz ON branches(business_id);
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

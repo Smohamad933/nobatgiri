@@ -29,12 +29,24 @@ try {
         // ================= عمومی =================
         case 'bootstrap':
             $customer = current_customer();
+            $bizId = get_int('business_id');
+            $biz = $bizId ? get_business($bizId) : null;
+            if ((!$biz || !$biz['active']) && !$bizId) {
+                $all = active_businesses();
+                $biz = $all[0] ?? null;
+            }
+            if (!$biz || !$biz['active']) {
+                json_error('کسب‌وکار یافت نشد.', 404);
+            }
             json_out(['ok' => true,
+                'platform' => [
+                    'name'  => setting('business_name', 'نوبت‌گیری'),
+                    'about' => setting('business_about', ''),
+                ],
                 'business' => [
-                    'name'    => setting('business_name', 'نوبت‌گیری'),
-                    'about'   => setting('business_about', ''),
-                    'phone'   => setting('business_phone', ''),
-                    'address' => setting('business_address', ''),
+                    'id' => (int) $biz['id'], 'name' => $biz['name'], 'category' => $biz['category'],
+                    'description' => $biz['description'], 'phone' => $biz['phone'],
+                    'address' => $biz['address'], 'city' => $biz['city'],
                 ],
                 'policy' => [
                     'free_cancel_hours' => setting_int('free_cancel_hours', 48),
@@ -43,10 +55,33 @@ try {
                 ],
                 'branches' => array_map(function ($b) {
                     return ['id' => (int) $b['id'], 'name' => $b['name'], 'address' => $b['address'], 'phone' => $b['phone']];
-                }, active_branches()),
+                }, active_branches((int) $biz['id'])),
                 'customer' => $customer ? ['name' => $customer['name'], 'phone' => $customer['phone']] : null,
                 'csrf'     => csrf_token(),
             ]);
+
+        case 'categories':
+            json_out(['ok' => true,
+                'categories' => array_map(function ($c) {
+                    return ['name' => $c['category'], 'count' => (int) $c['c']];
+                }, business_categories()),
+                'cities' => business_cities(),
+            ]);
+
+        case 'businesses':
+            $list = [];
+            foreach (active_businesses(get_param('category') ?: null, get_param('q'), get_param('city') ?: null) as $b) {
+                $next = business_next_available((int) $b['id']);
+                $list[] = [
+                    'id' => (int) $b['id'], 'name' => $b['name'], 'category' => $b['category'],
+                    'description' => $b['description'], 'phone' => $b['phone'],
+                    'address' => $b['address'], 'city' => $b['city'],
+                    'stats' => business_card_stats((int) $b['id']),
+                    'next'  => $next ?: null,
+                    'book_url' => u('book.php?b=' . $b['id']),
+                ];
+            }
+            json_out(['ok' => true, 'businesses' => $list]);
 
         case 'services':
             $branch_id = get_int('branch_id');
@@ -160,6 +195,13 @@ try {
             $date = post('date');
             $start = post('start');
             $payKind = post('pay_kind', 'full'); // full | deposit
+            $bizCheck = post_int('business_id');
+            if ($bizCheck > 0) {
+                $brCheck = get_branch($branch_id);
+                if (!$brCheck || (int) ($brCheck['business_id'] ?? 0) !== $bizCheck) {
+                    json_error('شعبه متعلق به این کسب‌وکار نیست.');
+                }
+            }
             try {
                 if ($staff_id <= 0) {
                     $booking = create_booking_any_staff($branch_id, $service_id, $date, $start, post('name', $customer['name'] ?? ''), $phone, (int) $customer['id'], post('notes'));
@@ -441,6 +483,7 @@ function booking_out(array $b): array
         'service' => $b['service_name'] ?? '',
         'staff' => $b['staff_name'] ?? '',
         'branch' => $b['branch_name'] ?? '',
+        'business' => $b['business_name'] ?? '',
         'date' => $b['booking_date'],
         'date_label' => fa_long_date($b['booking_date']),
         'start' => substr($b['start_time'], 0, 5),

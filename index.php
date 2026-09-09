@@ -10,26 +10,23 @@ require ROOT_PATH . '/lib/Booking.php';
 require ROOT_PATH . '/lib/Payment.php';
 require ROOT_PATH . '/lib/Share.php';
 require_installed();
-$bizName = setting('business_name', 'نوبت‌گیری');
-$bizAbout = setting('business_about', '');
-$bizPhone = setting('business_phone', '');
-$bizAddress = setting('business_address', '');
+$platform = setting('business_name', 'نوبت‌یار');
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h($bizName) ?> | رزرو آنلاین نوبت</title>
+<title><?= h($platform) ?> | رزرو آنلاین نوبت</title>
 <link rel="stylesheet" href="<?= h(asset('css/style.css')) ?>">
 </head>
 <body>
 
 <header class="site-header">
   <div class="container">
-    <a class="brand" href="<?= h(u('index.php')) ?>"><span class="brand-mark">◔</span><?= h($bizName) ?></a>
+    <a class="brand" href="<?= h(u('index.php')) ?>"><span class="brand-mark">◔</span><?= h($platform) ?></a>
     <nav class="nav">
-      <a href="#wizard">رزرو نوبت</a>
+      <a href="#businesses">کسب‌وکارها</a>
       <a href="#track">پیگیری نوبت</a>
       <a href="#my" id="nav-account" class="hide-m">نوبت‌های من</a>
       <span id="nav-user"></span>
@@ -39,32 +36,30 @@ $bizAddress = setting('business_address', '');
 
 <section class="hero">
   <div class="container">
-    <h1>رزرو آنلاین نوبت در کمتر از یک دقیقه</h1>
-    <p><?= h($bizAbout ?: 'خدمت و متخصص موردنظرتان را انتخاب کنید، ساعت خالی را ببینید و نوبتتان را قطعی کنید.') ?></p>
-    <a href="#wizard" class="btn btn-ghost btn-lg">شروع رزرو ←</a>
-    <div class="hero-meta">
-      <span>✓ یادآوری پیامکی نوبت</span>
-      <span>✓ لغو آسان تا <?= h(fa(setting_int('free_cancel_hours', 48))) ?> ساعت قبل</span>
-      <span>✓ پرداخت امن آنلاین</span>
+    <h1>هر نوبتی، از هر کسب‌وکاری — یک‌جا</h1>
+    <p>آرایشگاه، کلینیک، پزشک، تعمیرکار و ده‌ها خدمت دیگر؛ ساعت خالی را ببینید و در کمتر از یک دقیقه رزرو کنید.</p>
+    <div class="search-bar">
+      <input id="biz-search" placeholder="جستجوی کسب‌وکار، خدمت یا شهر… (مثلاً کوتاهی مو)">
+      <span class="search-ico">🔍</span>
     </div>
+    <div class="cat-pills" id="cat-pills"></div>
   </div>
 </section>
 
-<main class="container wizard-wrap">
-  <!-- ویزارد رزرو -->
-  <div id="wizard" class="card" style="scroll-margin-top:80px">
-    <div class="wizard-grid">
+<main class="container">
+  <!-- لیست کسب‌وکارها -->
+  <section class="section" id="businesses" style="scroll-margin-top:80px">
+    <div class="section-head">
       <div>
-        <div class="steps" id="steps"></div>
-        <div id="step-body"><div class="loading-box"><span class="spinner dark"></span> در حال بارگذاری…</div></div>
-        <div class="wizard-nav">
-          <button class="btn btn-ghost" id="btn-prev" style="visibility:hidden">→ مرحله قبل</button>
-          <button class="btn btn-primary" id="btn-next">مرحله بعد ←</button>
-        </div>
+        <h2>کسب‌وکارها</h2>
+        <p class="sub" id="biz-count"></p>
       </div>
-      <aside class="summary-card" id="summary"></aside>
+      <div class="form-group" style="min-width:180px;margin:0">
+        <select class="form-control" id="city-filter"><option value="">همه‌ی شهرها</option></select>
+      </div>
     </div>
-  </div>
+    <div id="biz-list"><div class="loading-box"><span class="spinner dark"></span> در حال بارگذاری…</div></div>
+  </section>
 
   <!-- ویژگی‌ها -->
   <section class="section">
@@ -102,8 +97,8 @@ $bizAddress = setting('business_address', '');
 
 <footer class="site-footer">
   <div class="container">
-    <div><b><?= h($bizName) ?></b><br><?= h($bizAddress) ?><br><?= h($bizPhone) ?></div>
-    <div><a href="#wizard">رزرو نوبت</a><br><a href="#track">پیگیری نوبت</a><br><a href="<?= h(u('admin/login.php')) ?>">ورود مدیر</a></div>
+    <div><b><?= h($platform) ?></b><br>پلتفرم یکپارچه‌ی رزرو آنلاین نوبت</div>
+    <div><a href="#businesses">کسب‌وکارها</a><br><a href="#track">پیگیری نوبت</a><br><a href="<?= h(u('provider/login.php')) ?>">ورود صاحبان کسب‌وکار</a><br><a href="<?= h(u('admin/login.php')) ?>">ورود مدیر</a></div>
   </div>
 </footer>
 
@@ -111,6 +106,7 @@ $bizAddress = setting('business_address', '');
 <script>
 window.APP = { api: <?= json_encode(u('api.php'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?> };
 </script>
-<script src="<?= h(asset('js/app.js')) ?>"></script>
+<script src="<?= h(asset('js/common.js')) ?>"></script>
+<script src="<?= h(asset('js/market.js')) ?>"></script>
 </body>
 </html>

@@ -164,3 +164,78 @@ function admin_logout(): void
     start_session();
     unset($_SESSION['admin_id']);
 }
+
+// ---------- صاحب خدمت (provider) ----------
+
+/** @return array{ok:bool,error?:string,user?:array} */
+function provider_login(string $phone, string $password): array
+{
+    $user = find_user_by_phone($phone);
+    if (!$user || $user['role'] !== 'provider' || !$user['password_hash'] || !password_verify($password, $user['password_hash'])) {
+        return ['ok' => false, 'error' => 'نام کاربری یا رمز عبور اشتباه است.'];
+    }
+    start_session();
+    session_regenerate_id(true);
+    $_SESSION['provider_id'] = (int) $user['id'];
+    unset($_SESSION['provider_biz']);
+    return ['ok' => true, 'user' => $user];
+}
+
+function current_provider(): ?array
+{
+    start_session();
+    $id = (int) ($_SESSION['provider_id'] ?? 0);
+    if ($id <= 0) {
+        return null;
+    }
+    $st = db()->prepare('SELECT * FROM users WHERE id = ? AND role = ?');
+    $st->execute([$id, 'provider']);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+function require_provider(): array
+{
+    $p = current_provider();
+    if (!$p) {
+        redirect(u('provider/login.php'));
+    }
+    return $p;
+}
+
+function provider_logout(): void
+{
+    start_session();
+    unset($_SESSION['provider_id'], $_SESSION['provider_biz']);
+}
+
+/**
+ * کسب‌وکار جاری پنل صاحب خدمت (با پشتیبانی از چند کسب‌وکار).
+ * با ?biz=ID قابل تعویض است.
+ */
+function provider_current_business(array $provider): ?array
+{
+    start_session();
+    $all = businesses_for_provider((int) $provider['id']);
+    if (!$all) {
+        return null;
+    }
+    $want = get_int('biz', (int) ($_SESSION['provider_biz'] ?? 0));
+    foreach ($all as $b) {
+        if ($want > 0 && (int) $b['id'] === $want) {
+            $_SESSION['provider_biz'] = (int) $b['id'];
+            return $b;
+        }
+    }
+    $_SESSION['provider_biz'] = (int) $all[0]['id'];
+    return $all[0];
+}
+
+/** شناسه‌ی شعبه‌های کسب‌وکار جاری (برای محدودسازی کوئری‌ها) */
+function provider_branch_ids(array $business): array
+{
+    $st = db()->prepare('SELECT id FROM branches WHERE business_id = ?');
+    $st->execute([$business['id']]);
+    $ids = $st->fetchAll(PDO::FETCH_COLUMN);
+    return $ids ?: [0];
+}
